@@ -1,0 +1,579 @@
+---
+title: "Simulacion_Paper_Goshal_R"
+author: "Jesus Secilla Martinez"
+date: "2024-03-31"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(refund)
+```
+
+```{r, tidy = FALSE,message=FALSE,warning=FALSE, fig.width=5, fig.height=5,echo=FALSE}
+#@N1: Degree of Bernstein polynomial basis.
+#@y: Scalar response.
+#@X: Functional covariate on a grid, n * m matrix.
+#T: Equispaced time-grid of functional observations.
+#constr: Constraints, one of positive,negative,inc (increasing), dec (decreasing), convex, concave.
+############CV function FOR CHOOSING N, degree of BP##################
+  cv.SOFR.con<-function(N1,y,X,T,constr="positive"){ n<-length(y)
+    library(caret)
+    set.seed(1)
+    find<-createFolds(y=c(1:n), k = 5, list = FALSE, returnTrain = FALSE)
+    cvscore<-c()
+    for (v in 1:5)
+    {tempind=which(find==v)
+    X1 <- NULL
+    for(k in 0:N1){
+      X1 <- cbind(X1, dbeta(T, shape1=(k+1), shape2=N1-k+1))
+    }
+    nte<-length(tempind)
+    ntr<-n-nte
+    W<-matrix(0,N,(N1+1))
+    for(i in 1:n)
+    {for (k in 1:ncol(X1))
+    {
+      W[i,k]<-mean(X[i,]*X1[,k])
+    }
+    }
+    
+    Wtr<-W[-tempind,]
+    Wte<-W[tempind,]
+    ytr<-y[-tempind]
+    yte<-y[tempind]
+    
+    library(restriktor)
+    glmod<-lm(ytr~Wtr)
+    summary(glmod)
+    
+    if(constr=="positive"){
+    A1<-diag(ncol(X1))
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+    }
+    
+    if(constr=="negative"){
+      A1<--diag(ncol(X1))
+      A<-cbind(rep(0,nrow(A1)),A1)
+      b=rep(0,nrow(A))
+    }
+    
+    if(constr=="dec"){
+      A1<-matrix(0,nrow=N1,ncol=(N1+1),byrow = TRUE)
+      for(i in 1:(N1))
+      {A1[i,i]=1
+      A1[i,(i+1)]=-1}
+      A<-cbind(rep(0,nrow(A1)),A1)
+      b=rep(0,nrow(A))
+    }
+    if(constr=="inc"){
+      A1<-matrix(0,nrow=N1,ncol=(N1+1),byrow = TRUE)
+      for(i in 1:(N1))
+      {A1[i,i]=-1
+      A1[i,(i+1)]=1}
+      A<-cbind(rep(0,nrow(A1)),A1)
+      b=rep(0,nrow(A))
+    }
+    
+    if(constr=="convex"){
+      A1<-matrix(0,nrow=(N1-1),ncol=(N1+1),byrow = TRUE)
+      for(i in 1:(N1-1))
+      {A1[i,i]=1
+      A1[i,i+1]=-2
+      A1[i,i+2]=1
+      }
+      A<-cbind(rep(0,nrow(A1)),A1)
+      b=rep(0,nrow(A))
+    }
+    
+    if(constr=="concave"){
+      A1<-matrix(0,nrow=(N1-1),ncol=(N1+1),byrow = TRUE)
+      for(i in 1:(N1-1))
+      {A1[i,i]=-1
+      A1[i,i+1]=2
+      A1[i,i+2]=-1
+      }
+      A<-cbind(rep(0,nrow(A1)),A1)
+      b=rep(0,nrow(A))
+    }
+    
+    fit.con <- restriktor(glmod, constraints = A,rhs=b,neq=0)
+    betares<- coef(fit.con) 
+    Xtemat<-cbind(rep(1,nte),Wte)
+    ypred<-as.numeric(Xtemat%*%betares)
+    cvscore[v]<- mean((yte-ypred)^2)
+    }
+    cverror<-mean(cvscore)
+    return(cverror)
+  }
+```
+
+```{r, tidy = FALSE,message=FALSE,warning=FALSE, fig.width=5, fig.height=5}
+#@N1: Degree of Bernstein polynomial basis.
+#@y: Scalar response.
+#@X: Functional covariate on a grid, n * m matrix.
+#T: Equispaced time-grid of functional observations.
+#constr: Constraints, one of positive,negative,inc (increasing), dec (decreasing), convex, concave.
+SOFR.con<-function(N1,y,X,T,T2,n2=m,constr="positive"){
+  m<-length(T)
+  tpred<-seq(0,1,l=n2)
+  tIMSE = T2
+  X1 <- NULL
+  for(k in 0:N1){
+    X1 <- cbind(X1, dbeta(T, shape1=(k+1), shape2=N1-k+1))
+  }
+  
+  W<-matrix(0,N,(N1+1))
+  for(i in 1:N)
+  {for (k in 1:ncol(X1))
+  {
+    W[i,k]<-mean(X[i,]*X1[,k])
+  }
+  }
+  
+  library(restriktor)
+  glmod<-lm(y~W)
+  summary(glmod)
+  if(constr=="positive"){
+    A1<-diag(ncol(X1))
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  
+  if(constr=="negative"){
+    A1<--diag(ncol(X1))
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  
+  if(constr=="dec"){
+    A1<-matrix(0,nrow=N1,ncol=(N1+1),byrow = TRUE)
+    for(i in 1:(N1))
+    {A1[i,i]=1
+    A1[i,(i+1)]=-1}
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  if(constr=="inc"){
+    A1<-matrix(0,nrow=N1,ncol=(N1+1),byrow = TRUE)
+    for(i in 1:(N1))
+    {A1[i,i]=-1
+    A1[i,(i+1)]=1}
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  
+  if(constr=="convex"){
+    A1<-matrix(0,nrow=(N1-1),ncol=(N1+1),byrow = TRUE)
+    for(i in 1:(N1-1))
+    {A1[i,i]=1
+    A1[i,i+1]=-2
+    A1[i,i+2]=1
+    }
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  
+  if(constr=="concave"){
+    A1<-matrix(0,nrow=(N1-1),ncol=(N1+1),byrow = TRUE)
+    for(i in 1:(N1-1))
+    {A1[i,i]=-1
+    A1[i,i+1]=2
+    A1[i,i+2]=-1
+    }
+    A<-cbind(rep(0,nrow(A1)),A1)
+    b=rep(0,nrow(A))
+  }
+  
+  fit.con <- restriktor(glmod, constraints = A,rhs=b,neq=0)
+  betares<- coef(fit.con) 
+  ypred<-fit.con$fitted
+  
+  beta1est<-function(x){
+    
+    n<-length(x)
+    X1 <- NULL
+    for(k in 0:N1){
+      X1 <- cbind(X1, dbeta(x, shape1=(k+1), shape2=N1-k+1))
+    }
+    pred<-as.numeric(X1%*%betares[-1])
+    pred
+  }
+  coef <- beta1est(tpred)
+  coef_IMSE <- beta1est(tIMSE)
+  betaresun<-coef(glmod)
+  Wreal<-cbind(rep(1,N),W)
+  Omegahat<-(t(Wreal)%*%Wreal)*(1/N)
+  ###sigmahat beta ur###
+  sigmahat_ur<-as.matrix(vcov(glmod))
+  L_omega<-t(chol(Omegahat))
+  library(MASS)
+  zgen<-function(...)
+  {betacan_ur<-mvrnorm(n=1,mu=betaresun,Sigma=sigmahat_ur)
+  Ystar<-as.numeric(L_omega%*%(betacan_ur))
+  Xstar<-L_omega
+  library(quadprog)
+  #ATb> b0.
+  Dmat = t(Xstar) %*% Xstar
+  Amat = t(A) 
+  bvec = b
+  dvec = t(Xstar) %*% Ystar
+  out<-solve.QP(Dmat = Dmat, dvec = dvec, Amat = Amat, bvec = bvec, meq = 0, factorized = F)
+  betaproj<-out$solution #out$solution
+  betaproj  
+  }
+  betagenmat<-sapply(1:10000,zgen)##10000 simulations from d
+  betagenmat<-t(betagenmat)
+  
+  bootmatest<-matrix(0,10000,m)
+  for(b in 1:10000){
+    betatemp<-betagenmat[b,]
+    beta1estboot<-function(x){
+      
+      n<-length(x)
+      X1 <- NULL
+      for(k in 0:N1){
+        X1 <- cbind(X1, dbeta(x, shape1=(k+1), shape2=N1-k+1))
+      }
+      pred<-as.numeric(X1%*%betatemp[-1])
+      pred
+    }
+    bootmatest[b,]<-beta1estboot(T)
+  }
+  lb<-apply(bootmatest,2, quantile,probs=0.025)
+  ub<-apply(bootmatest,2, quantile,probs=0.975)
+  result<-list(betaSOFR=coef,yhat=ypred,lb=lb,ub=ub, betaIMSE = coef_IMSE)
+  return(result)
+  }
+ 
+```
+
+
+## Simulación con restricciones
+
+```{r}
+n= 50 - 1
+a = 0
+b = 1
+#Step of the grid. Recall that n is the number of subintervals.
+h = (b-a)/n
+
+#Nodes
+#nodes = seq(a, b, h)
+
+#weights. 1/3 for the limits, 2/3 for the odd subintervals, 4/3 for the even ones. 
+w = rep(1, n+1)
+w[seq(2, n, 2)] = 2/3
+w[seq(3, n, 2)] = 4/3
+w[1] = w[n+1] = 1/3
+
+W=diag(w)*h
+
+n_2 = 500 - 1
+a_2 = 0
+b_2 = 1
+#Step of the grid. Recall that n is the number of subintervals.
+h_2 = (b_2 - a_2 )/n_2
+
+w_2 = rep(1, n_2+1)
+w_2[seq(2, n_2, 2)] = 2/3 
+w_2[seq(3, n_2, 2)] = 4/3
+w_2[1] = w_2[n+1] = 1/3
+
+W_IMSE = diag(w_2)*h_2
+```
+
+```{r, cache=TRUE, warning=FALSE}
+set.seed(1)
+
+nombres_filas <- c(25, 50, 100)
+nombres_columnas <- c("0.05")
+
+IMSE_Restricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_sd_Restricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+Tiempo_Restricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_Restricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_sd_Restricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+Tiempo_Restricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+library(readr)
+
+for (Distribucion in c("Goshal")){
+  Pos_N = 1
+  for (N in c(25,50,100)){
+    Pos_error = 1
+    for(error in c("005")){
+    start_time= Sys.time()
+
+# Especifica la ruta del archivo RDS
+ruta_archivo_rds <- paste("X_se_Muestras_", Distribucion, "_", error, "_", N, ".rds", sep = "")
+ruta_archivo_rds
+X_se <- readRDS(ruta_archivo_rds)
+y <- read.csv(paste("y_Muestras_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+Beta_real <- read.csv(paste("Beta_Muestras_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+Beta_real_2 <- read.csv(paste("Beta2_Muestras_", Distribucion, ".csv", sep = ""), dec = ".")
+T2 <- read.csv(paste("T2_Muestras_", Distribucion, ".csv", sep = ""), dec = ".")
+T2 <- as.vector(T2$x)
+t <- read.csv(paste("T_Muestras_Normal_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+y <- as.matrix(y) # Convertir a matriz si es necesario
+t <- as.vector(t$x) # Convertir a vector si es necesario
+
+m = 50
+n_sims = 200
+T <- t
+#Limits
+
+# Initialize matrix to store fitted values
+fitted_means_matrix <- matrix(0, n_sims, m)
+fitted_lower_matrix <- matrix(0, n_sims, m)
+fitted_upper_matrix <- matrix(0, n_sims, m)
+
+IMSE_cons=rep(0, n_sims)
+IMSE_cons_2 =rep(0, n_sims)
+MSE_cons=rep(0, n_sims)
+
+tiempo_constrained=0
+cont=0
+for (i in 1:n_sims) {
+  y_sim <- as.vector(y[i,])
+  X_sim <- X_se[,i,]
+  n<-length(y)
+  Ngrid<-c(3:8)  ###grid for choosing N1
+  cv<-cv.SOFR.con(Ngrid,y_sim,X_sim,T,constr = "positive")
+  indmin<-which.min(cv)
+  ###############################################
+  N1 <- Ngrid[indmin] #selected N1
+
+  out<-SOFR.con(N1,y_sim,X_sim,T,T2 = T2,m,constr = "positive")
+  # out.NULL<-SOFR.NULL(N1,y,X,T,m,constr = NULL)
+  beta1t<-out$betaSOFR #constrained estimate
+  betaIMSE <- out$betaIMSE
+
+  yhat=out$yhat
+  
+  # Store fitted values in matrix
+  fitted_means_matrix[i,] <- beta1t
+  
+  #IMSE
+  #IMSE_cons[i] = sum((Beta_real$x -beta1t)^2)
+  
+  IMSE_cons[i] = sum(t(Beta_real-beta1t)^2%*%W)
+  
+  IMSE_cons_2[i] = t(Beta_real_2$x - betaIMSE) %*% W_IMSE %*% (Beta_real_2$x - betaIMSE)
+  
+  # MSE
+  MSE_cons[i] = mean((y_sim - yhat)**2)
+
+end_time= Sys.time()
+
+}
+tiempo_constrained = end_time - start_time
+# Calculate mean and confidence intervals for each mesh point
+mean_fitted_vals <- apply(fitted_means_matrix, 2, mean)
+lower_ci <- apply(fitted_means_matrix, 2, function(x) quantile(x, 0.025))
+upper_ci <- apply(fitted_means_matrix, 2, function(x) quantile(x, 0.975))
+#
+## Combine results into a data frame
+results_constrained <- data.frame(T=T, mean=mean_fitted_vals, lower=lower_ci, upper=upper_ci)
+
+
+print(paste0('IMSE para N=',N," y error ", error, ' : ', mean(IMSE_cons)*1000))
+print(paste0('IMSE2 para N=',N," y error ", error, ' : ', mean(IMSE_cons_2)*1000))
+print(paste0('MSE for N=',N," y error ", error, ' : ', mean(MSE_cons)*1000))
+print(paste0('sd de IMSE para N=',N," y error ", error, ' : ', sd(IMSE_cons)*1000))
+print(paste0('sd de IMSE_2 para N=',N," y error ", error, ' : ', sd(IMSE_cons_2)*1000))
+print(paste0('sd de MSE para N=',N," y error ", error, ' : ', sd(MSE_cons)*1000))
+print(paste0('Tiempo para N=',N," y error", error, " : " , tiempo_constrained))
+
+# Crear el gráfico inicial con las líneas y el sombreado
+plot(results_constrained$mean, col = "black", type = "l",ylim = c(-0.05,0.15), ylab = "Valor", xlab = "Índice")
+
+# Agregar sombreado al intervalo de confianza
+polygon(c(1:length(results_constrained$mean), rev(1:length(results_constrained$mean))),
+        c(results_constrained$lower, rev(results_constrained$upper)),
+        col = "lightgreen", border = NA)
+
+# Agregar líneas y sombreado
+lines(results_constrained$lower, col = "pink")
+lines(results_constrained$upper, col = "pink")
+lines(Beta_real$x, col = "blue")
+lines(Beta_real$x, col = "blue")
+lines(results_constrained$mean, col = "black")
+abline(h = 0 , col = "red")
+
+# Agregar leyenda
+# legend("topright", legend = c("Mean", "Lower CI", "Upper CI", "Real Beta", "Zero Line"),
+#      col = c("black", "green", "green", "blue", "red"), lty = c(1, 1, 1, 1, 1),
+#      bg = "white", box.lty = 0)
+
+if(Distribucion == "Pareto"){
+  IMSE_Restricciones_Pareto[Pos_N,Pos_error] = mean(IMSE_cons)*1000
+  IMSE_sd_Restricciones_Pareto[Pos_N,Pos_error] = sd(IMSE_cons)*1000
+  Tiempo_Restricciones_Pareto[Pos_N,Pos_error] = tiempo_constrained
+}else{
+  IMSE_Restricciones_Normal[Pos_N,Pos_error] = mean(IMSE_cons)*1000
+  IMSE_sd_Restricciones_Normal[Pos_N,Pos_error] = sd(IMSE_cons)*1000
+  Tiempo_Restricciones_Normal[Pos_N,Pos_error] = tiempo_constrained 
+}
+Pos_error = Pos_error + 1
+    }
+    Pos_N = Pos_N + 1
+  }
+}
+```
+
+## Simulaciones sin restricciones
+
+```{r}
+
+set.seed(1)
+
+IMSE_NORestricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_sd_NORestricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+Tiempo_NORestricciones_Pareto <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_NORestricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+IMSE_sd_NORestricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+Tiempo_NORestricciones_Normal <- matrix(NA, nrow = length(nombres_filas), ncol = length(nombres_columnas),
+                dimnames = list(nombres_filas, nombres_columnas))
+
+library(readr)
+
+for (Distribucion in c("Goshal")){
+  Pos_N = 1
+  for (N in c(25,50,100)){
+    Pos_error = 1
+    for(error in c("005")){
+
+start_time= Sys.time()
+ruta_archivo_rds <- paste("X_se_Muestras_", Distribucion, "_", error, "_", N, ".rds", sep = "")
+X_se <- readRDS(ruta_archivo_rds)
+y <- read.csv(paste("y_Muestras_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+Beta_real <- read.csv(paste("Beta_Muestras_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+t <- read.csv(paste("T_Muestras_Normal_", Distribucion, "_", error, "_", N, ".csv", sep = ""), dec = ".")
+y <- as.matrix(y) # Convertir a matriz si es necesario
+t <- as.vector(t$x) # Convertir a vector si es necesario
+m = 50
+m_2 = 500
+n_sims = 200
+T <- t
+fitted_means_matrix <- matrix(0, n_sims, m)
+fitted_lower_matrix <- matrix(0, n_sims, m)
+fitted_upper_matrix <- matrix(0, n_sims, m)
+
+IMSE_uncons=rep(0, n_sims)
+IMSE_uncons_2 = rep(0, n_sims)
+MSE_uncons = rep(0,n_sims)
+
+tiempo_constrained=0
+cont=0
+for (i in 1:n_sims) {
+  y_sim <- as.vector(y[i,])
+  X_sim <- X_se[,i,]
+  n<-length(y)
+  
+  ####refund based unconstrained estimate for SOFR########
+  library(refund)
+  fit<- pfr(y_sim ~ lf(X_sim,argvals = T ,k=12, bs="ps",m=2))
+  #summary(fit)
+  aa<-coef(fit,n=m)
+  aa_IMSE <-coef(fit,n=m_2)
+  beta1t <-aa$value
+  beta_IMSE <- aa_IMSE$value
+  y_pred = fit$fitted.values
+  
+  # Store fitted values in matrix
+  fitted_means_matrix[i,] <- beta1t
+  
+  #IMSE
+  # IMSE_uncons[i] = sum((Beta_real$x -beta1t)^2)
+  IMSE_uncons[i] = h*sum(t(Beta_real-beta1t)^2%*%W)
+  IMSE_uncons_2[i] = t(Beta_real_2$x - beta_IMSE) %*% W_IMSE %*% (Beta_real_2$x - beta_IMSE)
+  MSE_uncons[i] = mean((y_sim - y_pred)**2)
+end_time= Sys.time()
+
+}
+tiempo_unconstrained = end_time - start_time
+# Calculate mean and confidence intervals for each mesh point
+mean_fitted_vals <- apply(fitted_means_matrix, 2, mean)
+lower_ci <- apply(fitted_means_matrix, 2, function(x) quantile(x, 0.025))
+upper_ci <- apply(fitted_means_matrix, 2, function(x) quantile(x, 0.975))
+#
+## Combine results into a data frame
+results_unconstrained <- data.frame(T=T, mean=mean_fitted_vals, lower=lower_ci, upper=upper_ci)
+
+print(paste0('IMSE para N=',N," y error = ",error, ' : ', mean(IMSE_uncons)*1000))
+print(paste0('Sd del IMSE para N=',N," y error = ",error,' : ', sd(IMSE_uncons)*1000))
+print(paste0('IMSE_2 para N=',N," y error = ",error, ' : ', mean(IMSE_uncons_2)*1000))
+print(paste0('Sd del IMSE_2 para N=',N," y error = ",error,' : ', sd(IMSE_uncons_2)*1000))
+print(paste0('MSE para N=',N," y error = ",error, ' : ', mean(MSE_uncons)*1000))
+print(paste0('Sd del MSE para N=',N," y error = ",error,' : ', sd(MSE_uncons)*1000))
+print(paste0('Times:', tiempo_unconstrained))
+# Crear el gráfico inicial con las líneas y el sombreado
+plot(results_unconstrained$mean, col = "black", type = "l", ylim = range(c(results_unconstrained$lower, results_unconstrained$upper, Beta_real$x)), ylab = "Valor", xlab = "Índice")
+
+# Agregar sombreado al intervalo de confianza
+polygon(c(1:length(results_unconstrained$mean), rev(1:length(results_unconstrained$mean))),
+        c(results_unconstrained$lower, rev(results_unconstrained$upper)),
+        col = "lightgreen", border = NA)
+
+# Agregar líneas y sombreado
+lines(results_unconstrained$lower, col = "pink")
+lines(results_unconstrained$upper, col = "pink")
+lines(Beta_real$x, col = "blue")
+lines(Beta_real$x, col = "blue")
+lines(results_unconstrained$mean, col = "black")
+abline(h = 0 , col = "red")
+
+# Agregar leyenda
+#legend("topright", legend = c("Mean", "Lower CI", "Upper CI", "Real Beta", "Zero Line"),
+#       col = c("black", "green", "green", "blue", "red"), lty = c(1, 1, 1, 1, 1),
+#       bg = "white", box.lty = 0)
+
+if(Distribucion == "Pareto"){
+  IMSE_NORestricciones_Pareto[Pos_N,Pos_error] = mean(IMSE_uncons)*1000
+  IMSE_sd_NORestricciones_Pareto[Pos_N,Pos_error] = sd(IMSE_uncons)*1000
+  Tiempo_NORestricciones_Pareto[Pos_N,Pos_error] = tiempo_unconstrained
+}else{
+  IMSE_NORestricciones_Normal[Pos_N,Pos_error] = mean(IMSE_uncons)*1000
+  IMSE_sd_NORestricciones_Normal[Pos_N,Pos_error] = sd(IMSE_uncons)*1000
+  Tiempo_NORestricciones_Normal[Pos_N,Pos_error] = tiempo_unconstrained 
+}
+Pos_error = Pos_error + 1
+    }
+    Pos_N = Pos_N + 1
+  }
+}
+```
+
+```{r}
+  knitr::kable(IMSE_Restricciones_Normal)
+  knitr::kable(IMSE_sd_Restricciones_Normal)
+  knitr::kable(Tiempo_Restricciones_Normal)
+  knitr::kable(IMSE_NORestricciones_Normal)
+  knitr::kable(IMSE_sd_NORestricciones_Normal)
+  knitr::kable(Tiempo_NORestricciones_Normal)
+```
